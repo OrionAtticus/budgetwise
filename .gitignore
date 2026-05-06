@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+
+# Local environment overrides — never commit your local password!
+.env
+.env.local
+.env.*.local
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# Runtime
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*~
+
+# Docker volumes (in case anyone runs without -v named volumes)
+pgdata/
+
+# Test artifacts
+coverage/
+.nyc_output/

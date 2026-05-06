@@ -1,0 +1,28 @@
+# BudgetWise — local development stack
+# Phase 1: PostgreSQL only. Backend (Node) and frontend (Vite) run on the host.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: budgetwise-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: budgetwise
+      POSTGRES_PASSWORD: budgetwise_dev
+      POSTGRES_DB: budgetwise
+    ports:
+      - "5432:5432"
+    volumes:
+      # Named volume → data survives container rebuilds
+      - budgetwise_pgdata:/var/lib/postgresql/data
+      # Schema is auto-applied the FIRST time the data volume is empty.
+      # To re-apply after editing: `docker compose down -v` then `up`.
+      - ./backend/sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U budgetwise -d budgetwise"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  budgetwise_pgdata:
