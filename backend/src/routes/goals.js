@@ -1,6 +1,7 @@
 // Goals routes.
 //   GET   /api/goals?memberId=         goals visible to that member (their personal + family-shared)
 //   GET   /api/goals/family            shared family goals only
+//   GET   /api/goals/:id/contributors  per-member contribution breakdown (shared goals only)
 //   POST  /api/goals                   create goal (caller's own; isShared:true allowed by anyone)
 //   POST  /api/goals/:id/contribute    add to current_amount
 //   PATCH /api/goals/:id/archive       soft-delete (owner only)
@@ -14,6 +15,7 @@ import {
   createGoal,
   addSavings,
   archiveGoal,
+  listContributors,
 } from '../services/goalsService.js';
 import { forbidden } from '../middleware/errors.js';
 
@@ -32,6 +34,11 @@ goalsRouter.get('/', requireAuth, asyncHandler(async (req, res) => {
 // GET /goals/family
 goalsRouter.get('/family', requireAuth, asyncHandler(async (req, res) => {
   res.json(await listFamilyShared(req.session.familyId));
+}));
+
+// GET /goals/:id/contributors
+goalsRouter.get('/:id/contributors', requireAuth, asyncHandler(async (req, res) => {
+  res.json(await listContributors(req.params.id, req.session.familyId));
 }));
 
 // POST /goals

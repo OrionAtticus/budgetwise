@@ -10,6 +10,10 @@ export const listGoals = (memberId) => {
 export const listFamilyGoals = () =>
   apiGet('/api/goals/family');
 
+/** Per-member contribution breakdown for a shared goal. Returns [] for personal goals. */
+export const listGoalContributors = (goalId) =>
+  apiGet(`/api/goals/${goalId}/contributors`);
+
 export const createGoal = (data) =>
   apiPost('/api/goals', data);
 

@@ -156,6 +156,7 @@ Authentication is via `Authorization: Bearer <token>` header.
 | GET    | `/api/goals/family`               | Family-shared goals                                  | bearer   |
 | POST   | `/api/goals`                      | Create goal (set `isShared: true` for family-wide)   | bearer   |
 | POST   | `/api/goals/:id/contribute`       | Add to current_amount                                | bearer   |
+| GET    | `/api/goals/:id/contributors`     | Per-member contribution breakdown (shared goals)     | bearer   |
 | PATCH  | `/api/goals/:id/archive`          | Soft-delete (owner only)                             | bearer   |
 | GET    | `/api/notifications`              | Caller's inbox                                       | bearer   |
 | POST   | `/api/notifications`              | Send a nudge                                         | admin    |
@@ -168,7 +169,7 @@ Authentication is via `Authorization: Bearer <token>` header.
 
 ## Verification & testing
 
-Four automated test scripts cover **91 tests total**, all passing:
+Five automated test scripts cover **105 tests total**, all passing:
 
 ```bash
 # Backend smoke test — exercises every endpoint, role boundary, and edge case
@@ -186,6 +187,10 @@ node test-csv-parser.mjs                             # 28 tests
 # CSV import end-to-end test — raw CSV → parse → bulk POST → DB verify,
 # including idempotency, role enforcement, and atomic rejection
 node test-csv-e2e.mjs                                # 12 tests
+
+# Smart insights + shared-goal contributors — exercises the rule-based
+# insight generator and the contributor ledger upsert
+node test-insights-contributors.mjs                  # 14 tests
 ```
 
 The CSV tests can run any time the API is up. The parser test needs no API.

@@ -124,11 +124,51 @@ export async function getDashboard(memberId, familyId) {
     categories: categoriesSummary,
     recentTransactions: recentTxs,
     goals: goalsSummary,
+    insight: buildSmartInsight({
+      remaining,
+      savingsRate,
+      totalSpent,
+      categories: categoriesSummary,
+      hasIncome: incomeThisMonth > 0,
+    }),
     cached: false,
   };
 
   cache.set(cacheKey(memberId), payload, config.cache.dashboardTtlSeconds);
   return payload;
+}
+
+/**
+ * Rule-based "Smart Insight" generator. Pure function — no DB access,
+ * no side effects. Picks the most relevant tip from a priority list
+ * based on the member's current numbers.
+ *
+ * Order matters: over-budget warnings beat savings praise, which beat
+ * generic spending advice, which beats the empty-state fallback.
+ */
+export function buildSmartInsight({ remaining, savingsRate, totalSpent, categories, hasIncome }) {
+  // 1. Over budget — most urgent
+  if (remaining < 0) {
+    return `⚠️ Heads up — you're over budget by $${Math.abs(remaining).toFixed(2)}. Try cutting back on non-essentials this week.`;
+  }
+
+  // 2. Crushing it — celebrate at 20%+ savings rate
+  //    Only meaningful when there's actually income flowing in.
+  if (hasIncome && savingsRate >= 20) {
+    return `⭐ Incredible job — you're saving ${savingsRate}% of your income. Consider moving the excess into your primary goal.`;
+  }
+
+  // 3. Highest expense category — actionable advice
+  if (totalSpent > 0 && categories.length > 0) {
+    // Don't mutate the input array — sort a copy
+    const top = [...categories].sort((a, b) => b.amountSpent - a.amountSpent)[0];
+    if (top && top.amountSpent > 0) {
+      return `💡 Your biggest expense this month is ${top.name} ($${top.amountSpent.toFixed(2)}). Could you trim this next month?`;
+    }
+  }
+
+  // 4. Empty-state fallback
+  return 'Keep tracking your expenses to see personalised insights here!';
 }
 
 /**

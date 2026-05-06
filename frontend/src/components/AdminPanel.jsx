@@ -4,10 +4,52 @@
 import { useState, useEffect, useCallback } from 'react';
 import { fetchFamilyDashboard } from '../api/dashboard.js';
 import { listProfiles, updateProfile } from '../api/profiles.js';
-import { listFamilyGoals, createGoal } from '../api/goals.js';
+import { listFamilyGoals, createGoal, listGoalContributors } from '../api/goals.js';
 import { sendNotification, listNotifications } from '../api/notifications.js';
 import { roleConfig, computeCategoryStatus, computeGoalProgress } from '../domain/roles.js';
 import { Modal, FormField, inputStyle, btnPrimary, btnSecondary } from './shared.jsx';
+
+/** Compact shared-goal card with per-contributor breakdown (admin panel layout). */
+function AdminSharedGoalCard({ goal }) {
+  const [contribs, setContribs] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    listGoalContributors(goal.id)
+      .then((list) => { if (!cancelled) setContribs(list); })
+      .catch(() => { if (!cancelled) setContribs([]); });
+    return () => { cancelled = true; };
+  }, [goal.id]);
+
+  const pct = computeGoalProgress(goal.currentAmount, goal.targetAmount);
+  return (
+    <div style={{ background: '#fff', border: '1px solid #e8e4df', borderRadius: 16, padding: 20 }}>
+      <div style={{ fontSize: 22, marginBottom: 6 }}>{goal.icon}</div>
+      <div style={{ fontSize: 14, fontWeight: 600 }}>{goal.name}</div>
+      <div style={{ fontSize: 11, color: '#a8a29e' }}>Target ${Number(goal.targetAmount).toLocaleString()}{goal.deadline ? ` · ${new Date(goal.deadline).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}` : ''}</div>
+      <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 18, color: '#3d6b52', marginTop: 4 }}>${Number(goal.currentAmount).toLocaleString()}</div>
+      <div style={{ height: 6, background: '#f2f0ed', borderRadius: 3, overflow: 'hidden', marginTop: 8 }}>
+        <div style={{ height: '100%', width: `${pct}%`, background: '#3d6b52', borderRadius: 3 }} />
+      </div>
+      <div style={{ fontSize: 11, color: '#57534e', marginTop: 6 }}>{pct}% complete</div>
+
+      {contribs && contribs.length > 0 && (
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #f2f0ed' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, color: '#a8a29e', marginBottom: 6 }}>Contributors</div>
+          {contribs.map((c) => {
+            const crc = roleConfig(c.role);
+            return (
+              <div key={c.memberId} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0', fontSize: 11 }}>
+                <span style={{ width: 14, height: 14, borderRadius: '50%', background: crc.bg, border: `1px solid ${crc.mid}`, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, flexShrink: 0 }}>{crc.icon}</span>
+                <span style={{ flex: 1, color: '#1c1917' }}>{c.name}</span>
+                <span style={{ fontFamily: "'DM Mono',monospace", color: crc.color, fontWeight: 600 }}>${c.totalContributed.toLocaleString()}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // Plan-tier display labels and prices for the new plan badge.
 const PLAN_INFO = {
@@ -196,21 +238,9 @@ export default function AdminPanel({ session, onBackToDashboard, onShowToast }) 
             <button onClick={() => setSharedGoalOpen(true)} style={btnPrimary()}>+ Add Shared Goal</button>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14 }}>
-            {sharedGoals.map((g) => {
-              const pct = computeGoalProgress(g.currentAmount, g.targetAmount);
-              return (
-                <div key={g.id} style={{ background: '#fff', border: '1px solid #e8e4df', borderRadius: 16, padding: 20 }}>
-                  <div style={{ fontSize: 22, marginBottom: 6 }}>{g.icon}</div>
-                  <div style={{ fontSize: 14, fontWeight: 600 }}>{g.name}</div>
-                  <div style={{ fontSize: 11, color: '#a8a29e' }}>Target ${Number(g.targetAmount).toLocaleString()}{g.deadline ? ` · ${new Date(g.deadline).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}` : ''}</div>
-                  <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 18, color: '#3d6b52', marginTop: 4 }}>${Number(g.currentAmount).toLocaleString()}</div>
-                  <div style={{ height: 6, background: '#f2f0ed', borderRadius: 3, overflow: 'hidden', marginTop: 8 }}>
-                    <div style={{ height: '100%', width: `${pct}%`, background: '#3d6b52', borderRadius: 3 }} />
-                  </div>
-                  <div style={{ fontSize: 11, color: '#57534e', marginTop: 6 }}>{pct}% complete</div>
-                </div>
-              );
-            })}
+            {sharedGoals.map((g) => (
+              <AdminSharedGoalCard key={g.id} goal={g} />
+            ))}
             {sharedGoals.length === 0 && (
               <div style={{ gridColumn: '1 / -1', textAlign: 'center', color: '#a8a29e', padding: 30, border: '1px dashed #e8e4df', borderRadius: 16 }}>
                 No shared goals yet.

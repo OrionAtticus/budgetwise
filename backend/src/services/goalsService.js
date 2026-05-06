@@ -1,4 +1,4 @@
-import { query } from '../db.js';
+import { query, tx } from '../db.js';
 import { computeGoalProgress } from '../domain/rules.js';
 import { badRequest, notFound, forbidden } from '../middleware/errors.js';
 import * as cache from './cacheService.js';
@@ -79,24 +79,85 @@ export async function addSavings(goalId, callerMemberId, callerFamilyId, amount)
   const allowed = g.member_id === callerMemberId || (g.is_shared && g.family_id === callerFamilyId);
   if (!allowed) throw forbidden('Cannot contribute to this goal');
 
-  const r = await query(
-    `UPDATE savings_goals
-        SET current_amount = current_amount + $1
-      WHERE id = $2
-      RETURNING id, member_id, family_id, name, icon, target_amount, current_amount,
-                deadline, is_shared, is_archived, created_at`,
-    [amount, goalId],
-  );
+  // Update the goal total AND, for shared goals, upsert the per-member
+  // contribution ledger — both inside the same DB transaction so they
+  // can never drift out of sync. The ledger row is keyed (goal_id,
+  // member_id), so repeat contributions from the same person increment
+  // their running total via ON CONFLICT.
+  const result = await tx(async (c) => {
+    const updated = await c.query(
+      `UPDATE savings_goals
+          SET current_amount = current_amount + $1
+        WHERE id = $2
+        RETURNING id, member_id, family_id, name, icon, target_amount, current_amount,
+                  deadline, is_shared, is_archived, created_at`,
+      [amount, goalId],
+    );
 
+    if (g.is_shared) {
+      await c.query(
+        `INSERT INTO shared_goal_contributors (goal_id, member_id, total_contributed, last_contribution)
+         VALUES ($1, $2, $3, NOW())
+         ON CONFLICT (goal_id, member_id)
+         DO UPDATE SET
+           total_contributed = shared_goal_contributors.total_contributed + EXCLUDED.total_contributed,
+           last_contribution = NOW()`,
+        [goalId, callerMemberId, amount],
+      );
+    }
+
+    return updated.rows[0];
+  });
+
+  // Cache invalidation — must wipe every family member's dashboard for
+  // shared goals so all of them see the new total + ledger.
   if (g.is_shared) {
     const famR = await query('SELECT id FROM user_profiles WHERE family_id = $1', [g.family_id]);
-    famR.rows.forEach(row => cache.invalidateMember(row.id));
+    famR.rows.forEach((row) => cache.invalidateMember(row.id));
   } else {
     cache.invalidateMember(g.member_id);
     if (callerMemberId !== g.member_id) cache.invalidateMember(callerMemberId);
   }
 
-  return rowToGoal(r.rows[0]);
+  return rowToGoal(result);
+}
+
+/**
+ * List per-member contributions to a shared goal. Used by the family
+ * tab and admin panel to show "who paid what".
+ *
+ * Returns an empty array for personal (non-shared) goals — those don't
+ * have a contributor ledger by design.
+ */
+export async function listContributors(goalId, callerFamilyId) {
+  const goalR = await query(
+    `SELECT id, family_id, is_shared FROM savings_goals WHERE id = $1`,
+    [goalId],
+  );
+  if (goalR.rowCount === 0) throw notFound('Goal not found');
+  const g = goalR.rows[0];
+  // Authorization: any family member can read contributors of a shared
+  // goal in their family. Personal goals are not exposed here.
+  if (g.family_id !== callerFamilyId) throw forbidden('Goal not in your family');
+  if (!g.is_shared) return [];
+
+  const r = await query(
+    `SELECT sgc.member_id, sgc.total_contributed, sgc.last_contribution,
+            p.name, p.role, p.accent_colour
+       FROM shared_goal_contributors sgc
+       JOIN user_profiles p ON p.id = sgc.member_id
+      WHERE sgc.goal_id = $1
+      ORDER BY sgc.total_contributed DESC, p.name ASC`,
+    [goalId],
+  );
+  return r.rows.map((row) => ({
+    memberId:         row.member_id,
+    name:             row.name,
+    role:             row.role,
+    accentColour:     row.accent_colour,
+    totalContributed: Number(row.total_contributed) || 0,
+    lastContribution: row.last_contribution,
+  }));
 }
 
 export async function archiveGoal(goalId, callerMemberId) {

@@ -90,11 +90,18 @@ CREATE INDEX idx_goals_member        ON savings_goals(member_id);
 CREATE INDEX idx_goals_family_shared ON savings_goals(family_id) WHERE is_shared = TRUE;
 
 -- ── §3.6  shared_goal_contributors ─────────────────────────────────────
+-- Tracks how much each family member has contributed to a shared goal,
+-- so the "Family" tab can show a per-member breakdown ("Mom: $1,200 ·
+-- Dad: $800 · Jordan: $50"). Updated via UPSERT inside addSavings()
+-- when is_shared = TRUE on the parent goal.
 CREATE TABLE shared_goal_contributors (
-    goal_id    UUID NOT NULL REFERENCES savings_goals(id)   ON DELETE CASCADE,
-    member_id  UUID NOT NULL REFERENCES user_profiles(id)   ON DELETE CASCADE,
+    goal_id           UUID NOT NULL REFERENCES savings_goals(id)   ON DELETE CASCADE,
+    member_id         UUID NOT NULL REFERENCES user_profiles(id)   ON DELETE CASCADE,
+    total_contributed DECIMAL(12,2) NOT NULL DEFAULT 0.00 CHECK (total_contributed >= 0),
+    last_contribution TIMESTAMPTZ,
     PRIMARY KEY (goal_id, member_id)
 );
+CREATE INDEX idx_sgc_member ON shared_goal_contributors(member_id);
 
 -- ── §3.7  notifications ────────────────────────────────────────────────
 CREATE TABLE notifications (

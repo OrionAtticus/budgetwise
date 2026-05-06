@@ -157,20 +157,39 @@ async function seed() {
       { desc: 'Weekly Allowance',  amount: 25.00, type: 'income',  cat: 'Allowance',       date: d(2) },
     ]);
 
-    const goal = async (memberId, name, icon, target, current, deadline, isShared) =>
-      c.query(
+    const goal = async (memberId, name, icon, target, current, deadline, isShared) => {
+      const r = await c.query(
         `INSERT INTO savings_goals
            (member_id, family_id, name, icon, target_amount, current_amount, deadline, is_shared)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         RETURNING id`,
         [memberId, familyId, name, icon, target, current, deadline, isShared],
       );
+      return r.rows[0].id;
+    };
 
-    await goal(momId, 'Family Vacation',   '🏖️', 6000,  3840,  '2026-08-01', true);
-    await goal(momId, 'Home Renovation',   '🏠',  20000, 7200,  '2027-12-01', true);
+    /** Seed a contributor row for a shared goal — shows up on the family tab. */
+    const contrib = async (goalId, memberId, amount) =>
+      c.query(
+        `INSERT INTO shared_goal_contributors (goal_id, member_id, total_contributed, last_contribution)
+         VALUES ($1, $2, $3, NOW())`,
+        [goalId, memberId, amount],
+      );
+
+    const vacationId = await goal(momId, 'Family Vacation',   '🏖️', 6000,  3840,  '2026-08-01', true);
+    const renoId     = await goal(momId, 'Home Renovation',   '🏠',  20000, 7200,  '2027-12-01', true);
     await goal(momId, 'Emergency Fund',    '🛡️', 10000, 6400,  null,         false);
     await goal(dadId, 'New Guitar',        '🎸',  1200,  680,   null,         false);
     await goal(teenId,'New Headphones',    '🎧',  300,   180,   null,         false);
     await goal(kidId, 'New Bicycle',       '🚲',  200,   86,    null,         false);
+
+    // Backfill the contributor ledger so the demo shows breakdown immediately.
+    // Sums must equal the goal's current_amount above (3840 and 7200).
+    await contrib(vacationId, momId,  2200);
+    await contrib(vacationId, dadId,  1500);
+    await contrib(vacationId, teenId, 140);
+    await contrib(renoId,     momId,  4500);
+    await contrib(renoId,     dadId,  2700);
   });
 
   console.log(`\n[seed] Done. Default PIN for every member is ${DEFAULT_PIN}.`);
